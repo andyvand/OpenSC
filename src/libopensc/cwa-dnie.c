@@ -724,15 +724,14 @@ static int dnie_transmit_apdu_internal(sc_card_t * card, sc_apdu_t * apdu)
 
 		size_t e_txlen = 0;
 		size_t index = 0;
-		sc_apdu_t *e_apdu = NULL;
+		sc_apdu_t e_apdu;
 		u8 *e_tx = NULL;
 
 		/* envelope needed */
 		sc_log(card->ctx, "envelope tx required: lc:%d", apdu->lc);
 
-		e_apdu = calloc(1, sizeof(sc_apdu_t));	/* enveloped apdu */
 		e_tx = calloc(7 + apdu->datalen, sizeof(u8));	/* enveloped data */
-		if (!e_apdu || !e_tx)
+		if (!e_tx)
 			LOG_FUNC_RETURN(card->ctx, SC_ERROR_OUT_OF_MEMORY);
 
 		/* copy apdu info into enveloped data */
@@ -753,36 +752,38 @@ static int dnie_transmit_apdu_internal(sc_card_t * card, sc_apdu_t * apdu)
 			       index, len);
 
 			/* compose envelope apdu command */
-			sc_format_apdu(card, e_apdu, apdu->cse, 0xC2, 0x00,
+			sc_format_apdu(card, &e_apdu, apdu->cse, 0xC2, 0x00,
 				       0x00);
-			e_apdu->cla = 0x90;	/* propietary CLA */
-			e_apdu->data = e_tx + index;
-			e_apdu->lc = len;
-			e_apdu->datalen = len;
-			e_apdu->le = apdu->le;
-			e_apdu->resp = apdu->resp;
-			e_apdu->resplen = apdu->resplen;
+			e_apdu.cla = 0x90;	/* propietary CLA */
+			e_apdu.data = e_tx + index;
+			e_apdu.lc = len;
+			e_apdu.datalen = len;
+			e_apdu.le = apdu->le;
+			e_apdu.resp = apdu->resp;
+			e_apdu.resplen = apdu->resplen;
 			/* if SM is ON, ensure resp exists, and force getResponse() */
 			if (provider->status.session.state == CWA_SM_ACTIVE) {
 				/* set up proper apdu type */
-				if (e_apdu->cse == SC_APDU_CASE_3_SHORT)
-					e_apdu->cse = SC_APDU_CASE_4_SHORT;
+				if (e_apdu.cse == SC_APDU_CASE_3_SHORT)
+					e_apdu.cse = SC_APDU_CASE_4_SHORT;
 				/* if no response buffer: create */
 				if (apdu->resplen == 0) {
-					e_apdu->resp = buf;
-					e_apdu->resplen = 2048;
-					e_apdu->le = card->max_recv_size;
+					e_apdu.resp = buf;
+					e_apdu.resplen = 2048;
+					e_apdu.le = card->max_recv_size;
 				}
 			}
 			/* send data chunk bypassing apdu wrapping */
-			res = sc_transmit_apdu(card, e_apdu);
-			LOG_TEST_RET(card->ctx, res,
+			res = sc_transmit_apdu(card, &e_apdu);
+			LOG_TEST_GOTO_ERR(card->ctx, res,
 				     "Error in envelope() send apdu");
 		}		/* for */
 		/* last apdu sent contains response to enveloped cmd */
-		apdu->resp = e_apdu->resp;
-		apdu->resplen = e_apdu->resplen;
+		apdu->resp = e_apdu.resp;
+		apdu->resplen = e_apdu.resplen;
 		res = SC_SUCCESS;
+err:
+		free(e_tx);
 	}
 	LOG_FUNC_RETURN(card->ctx, res);
 }
